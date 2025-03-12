@@ -3,30 +3,57 @@
 # Function to clear specified files so you can work through the demo.md
 ,clean_files() {
     echo "Cleaning up files..."
-    pulumi stack rm dev --yes 
-    # List of specific files to remove
-    local files_to_remove=("__main__.py" "text.txt" "requirements.txt")
+    pulumi stack rm dev --yes
     
-    # Remove specific files
-    for file in "${files_to_remove[@]}"; do
-        if [ -f "$file" ]; then
-            rm -f "$file"
-            echo "$file has been removed."
+    # Define cleanup targets in a data-driven way
+    local files=(
+        "__main__.py"  # Specific files
+        "text.txt" 
+        "requirements.txt"
+        "*.yaml"      # File patterns
+        "*.yml"
+    )
+    
+    local directories=(
+        "venv"        # Directories to remove
+        "__pycache__"
+    )
+    
+    # Remove files
+    for pattern in "${files[@]}"; do
+        # Check if it's a direct file match
+        if [[ -f "$pattern" ]]; then
+            rm -f "$pattern"
+            echo "Removed file: $pattern"
         else
-            echo "$file does not exist."
+            # It's a pattern, find matching files
+            found_files=($(find . -maxdepth 1 -type f -name "$pattern" 2>/dev/null))
+            for file in "${found_files[@]}"; do
+                rm -f "$file"
+                echo "Removed file: $file"
+            done
         fi
     done
     
-    # Remove all YAML files
-    yaml_files=($(find . -maxdepth 1 -name "*.yaml" -o -name "*.yml"))
-    if [ ${#yaml_files[@]} -gt 0 ]; then
-        for yaml_file in "${yaml_files[@]}"; do
-            rm -f "$yaml_file"
-            echo "$yaml_file has been removed."
-        done
-    else
-        echo "No YAML files found."
-    fi
+    # Remove directories
+    for dir in "${directories[@]}"; do
+        # Check if it's a direct directory match
+        if [[ -d "$dir" ]]; then
+            rm -rf "$dir"
+            echo "Removed directory: $dir"
+        fi
+        
+        # Also check for any __pycache__ directories in util/
+        if [[ "$dir" == "__pycache__" ]]; then
+            found_dirs=($(find . -type d -name "$dir" 2>/dev/null))
+            for found_dir in "${found_dirs[@]}"; do
+                if [[ "$found_dir" != "./$dir" ]]; then  # Avoid duplicate removal
+                    rm -rf "$found_dir"
+                    echo "Removed directory: $found_dir"
+                fi
+            done
+        fi
+    done
     
     echo "Cleanup complete."
 }
