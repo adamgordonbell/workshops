@@ -20,6 +20,13 @@ Before starting this workshop, ensure you have:
 - AWS account with appropriate permissions
 - Logged into AWS 
 ```
+Simple Request Flow:
+
+![](simple-lambda.png)
+
+Full Arch:
+
+![](full-diagram.png)
 
 ## S3 Bucket Creation
 
@@ -41,6 +48,7 @@ This creates a basic Pulumi project with the necessary files to deploy AWS resou
 ### Examine the Project Structure
 
 Take a moment to look at the files created:
+
 - `__main__.py`: The main Pulumi program
 - `Pulumi.yaml`: Project configuration
 - `requirements.txt`: Python dependencies
@@ -152,7 +160,7 @@ This Flask application:
 - Serves our text file when the route is accessed
 - Includes a Lambda handler that uses AWSGI to adapt Flask to Lambda
 
-## Lambda Deployment
+## SLambda Deployment
 
 AWS Lambda lets us run code without provisioning servers. We'll package our Flask application in a Docker container and deploy it as a Lambda function.
 
