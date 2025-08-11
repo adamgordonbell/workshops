@@ -164,7 +164,7 @@ preview_friendly_stack = StackValidationPolicy(
 # Create the policy pack
 policy_pack = PolicyPack(
     name="demo-policies",
-    enforcement_level=EnforcementLevel.MANDATORY,
+    enforcement_level=EnforcementLevel.ADVISORY,
     policies=[
         restrict_dangerous_ports,      # Will trigger on port 23
         limit_memory_usage,           # Will trigger on 2048MB memory  
