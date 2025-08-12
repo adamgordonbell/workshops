@@ -31,7 +31,7 @@ restrict_dangerous_ports = ResourceValidationPolicy(
     name="restrict-dangerous-ports",
     description="Microservice components must not use dangerous ports like 22, 23, 3389, or 1433",
     validate=restrict_ports_validation,
-    enforcement_level=EnforcementLevel.ADVISORY,  # Changed to advisory to allow all policies to run
+    enforcement_level=EnforcementLevel.MANDATORY,  # Changed to advisory to allow all policies to run
 )
 
 # Policy 2: Limit memory usage - read from ECS TaskDefinition tags
@@ -180,9 +180,9 @@ policy_pack = PolicyPack(
     name="demo-policies",
     enforcement_level=EnforcementLevel.ADVISORY,
     policies=[
-        # restrict_dangerous_ports,      # Will trigger on port 22
-        # limit_memory_usage,           # Will trigger on 2048MB memory  
-        # stack_resource_alignment,     # Will trigger on unencrypted S3 bucket
+        restrict_dangerous_ports,      # Will trigger on port 22
+        limit_memory_usage,           # Will trigger on 2048MB memory  
+        stack_resource_alignment,     # Will trigger on unencrypted S3 bucket
         # preview_friendly_stack,       # Will trigger on missing load balancer
         # debug_stack_resources,        # Debug what resources are in stack
     ],
