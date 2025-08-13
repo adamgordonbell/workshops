@@ -181,8 +181,8 @@ policy_pack = PolicyPack(
     enforcement_level=EnforcementLevel.ADVISORY,
     policies=[
         restrict_dangerous_ports,      # Will trigger on port 22
-        limit_memory_usage,           # Will trigger on 2048MB memory  
-        stack_resource_alignment,     # Will trigger on unencrypted S3 bucket
+        # limit_memory_usage,           # Will trigger on 2048MB memory  
+        # stack_resource_alignment,     # Will trigger on unencrypted S3 bucket
         # preview_friendly_stack,       # Will trigger on missing load balancer
         # debug_stack_resources,        # Debug what resources are in stack
     ],

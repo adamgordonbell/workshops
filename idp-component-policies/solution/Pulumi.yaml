@@ -30,13 +30,13 @@ resources:
     properties:
       bucket: demo-data-bucket-${bucketSuffix.result}
 
-  # dataBucketEncryption:
-  #   type: aws:s3/bucketServerSideEncryptionConfiguration:BucketServerSideEncryptionConfiguration
-  #   properties:
-  #     bucket: ${dataBucket.id}
-  #     rules:
-  #       - applyServerSideEncryptionByDefault:
-  #           sseAlgorithm: AES256
+  dataBucketEncryption:
+    type: aws:s3/bucketServerSideEncryptionConfiguration:BucketServerSideEncryptionConfiguration
+    properties:
+      bucket: ${dataBucket.id}
+      rules:
+        - applyServerSideEncryptionByDefault:
+            sseAlgorithm: AES256
 outputs:
   publicUrl: ${microserviceComponent.publicUrl}
 config:
