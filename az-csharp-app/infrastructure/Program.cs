@@ -1,37 +1,28 @@
 ﻿using Pulumi;
 using Pulumi.AzureNative.Resources;
 using Pulumi.AzureNative.Storage;
-using Pulumi.AzureNative.Storage.Inputs;
+using StorageInputs = Pulumi.AzureNative.Storage.Inputs;
 using Pulumi.AzureNative.Web;
 using Pulumi.AzureNative.Web.Inputs;
 using Pulumi.AzureNative.CognitiveServices;
+using CognitiveInputs = Pulumi.AzureNative.CognitiveServices.Inputs;
+using CognitiveServices = Pulumi.AzureNative.CognitiveServices;
 using System.Collections.Generic;
 using System;
 
 return await Pulumi.Deployment.RunAsync(() =>
 {
-    // Common tags to prevent auto-teardown
-    var commonTags = new Dictionary<string, string>
-    {
-        ["Owner"] = "v-adam@pulumi.com",
-        ["Project"] = $"Azure C# Workshop - {Pulumi.Deployment.Instance.StackName}"
-    };
-
-    var rg = new ResourceGroup("dad-joke-rg", new ResourceGroupArgs
-    {
-        Tags = commonTags
-    });
+    var rg = new ResourceGroup("dad-joke-rg");
 
     var stg = new StorageAccount("dadjokesa", new StorageAccountArgs
     {
         ResourceGroupName = rg.Name,
-        Sku = new Pulumi.AzureNative.Storage.Inputs.SkuArgs { Name = SkuName.Standard_LRS },
+        Sku = new StorageInputs.SkuArgs { Name = SkuName.Standard_LRS },
         Kind = Kind.StorageV2,
-        AllowBlobPublicAccess = false,
-        Tags = commonTags
+        AllowBlobPublicAccess = false
     });
 
-    // Connection string for Functions runtime
+     // Connection string for Functions runtime
     var storageConn = Output.Tuple(rg.Name, stg.Name).Apply(async t =>
     {
         var (rgName, acctName) = t;
@@ -44,36 +35,35 @@ return await Pulumi.Deployment.RunAsync(() =>
         return $"DefaultEndpointsProtocol=https;AccountName={acctName};AccountKey={key};EndpointSuffix=core.windows.net";
     });
 
-    // Azure OpenAI (Cognitive Services) - using East US as GPT-4o-mini not available in Canadian regions
+    // Azure OpenAI (Cognitive Services)
     var openAI = new Account("dad-joke-openai", new AccountArgs
     {
         ResourceGroupName = rg.Name,
-        Location = "eastus", // GPT-4o-mini supported region
+        Location = "eastus",
         Kind = "OpenAI",
-        Sku = new Pulumi.AzureNative.CognitiveServices.Inputs.SkuArgs
+        Sku = new CognitiveInputs.SkuArgs
         {
             Name = "S0"
-        },
-        Tags = commonTags
+        }
     });
 
     // GPT-4o-mini deployment
-    var gptDeployment = new Pulumi.AzureNative.CognitiveServices.Deployment("gpt-4o-mini-deployment", new Pulumi.AzureNative.CognitiveServices.DeploymentArgs
+    var gptDeployment = new CognitiveServices.Deployment("gpt-4o-mini-deployment", new CognitiveServices.DeploymentArgs
     {
         AccountName = openAI.Name,
         ResourceGroupName = rg.Name,
         DeploymentName = "gpt-4o-mini",
-        Properties = new Pulumi.AzureNative.CognitiveServices.Inputs.DeploymentPropertiesArgs
+        Properties = new CognitiveInputs.DeploymentPropertiesArgs
         {
-            Model = new Pulumi.AzureNative.CognitiveServices.Inputs.DeploymentModelArgs
+            Model = new CognitiveInputs.DeploymentModelArgs
             {
                 Format = "OpenAI",
                 Name = "gpt-4o-mini",
                 Version = "2024-07-18"
             },
-            VersionUpgradeOption = Pulumi.AzureNative.CognitiveServices.DeploymentModelVersionUpgradeOption.OnceCurrentVersionExpired
+            VersionUpgradeOption = CognitiveServices.DeploymentModelVersionUpgradeOption.OnceCurrentVersionExpired
         },
-        Sku = new Pulumi.AzureNative.CognitiveServices.Inputs.SkuArgs
+        Sku = new CognitiveInputs.SkuArgs
         {
             Name = "Standard",
             Capacity = 10
@@ -86,8 +76,7 @@ return await Pulumi.Deployment.RunAsync(() =>
         ResourceGroupName = rg.Name,
         Kind = "functionapp",
         Reserved = true,                  // IMPORTANT: Linux
-        Sku = new SkuDescriptionArgs { Name = "Y1", Tier = "Dynamic" },
-        Tags = commonTags
+        Sku = new SkuDescriptionArgs { Name = "Y1", Tier = "Dynamic" }
     });
 
     // Blob container to hold packages
@@ -105,7 +94,7 @@ return await Pulumi.Deployment.RunAsync(() =>
         ResourceGroupName = rg.Name,
         ContainerName = container.Name,
         Type = BlobType.Block,
-        Source = new Pulumi.FileAsset("../function/bin/function-app.zip"),
+        Source = new FileAsset("../function/bin/function-app.zip"),
         ContentType = "application/zip",
     });
 
@@ -135,7 +124,6 @@ return await Pulumi.Deployment.RunAsync(() =>
         ServerFarmId = plan.Id,
         Kind = "functionapp,linux",
         HttpsOnly = true,
-        Tags = commonTags,
         SiteConfig = new SiteConfigArgs
         {
             LinuxFxVersion = "DOTNET-ISOLATED|8.0",
@@ -151,7 +139,7 @@ return await Pulumi.Deployment.RunAsync(() =>
                     Name = "AZURE_OPENAI_API_KEY",
                     Value = Output.Tuple(rg.Name, openAI.Name).Apply(async t => {
                         var (rgName, acctName) = t;
-                        var keys = await Pulumi.AzureNative.CognitiveServices.ListAccountKeys.InvokeAsync(new()
+                        var keys = await CognitiveServices.ListAccountKeys.InvokeAsync(new()
                         {
                             ResourceGroupName = rgName,
                             AccountName = acctName
@@ -170,6 +158,5 @@ return await Pulumi.Deployment.RunAsync(() =>
     {
         ["functionAppUrl"] = app.DefaultHostName.Apply(h => $"https://{h}"),
         ["jokeEndpoint"]   = app.DefaultHostName.Apply(h => $"https://{h}/api/joke"),
-        ["openAIAccountName"] = openAI.Name
     };
 });
