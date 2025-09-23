@@ -10,14 +10,25 @@ using System;
 
 return await Pulumi.Deployment.RunAsync(() =>
 {
-    var rg = new ResourceGroup("dad-joke-rg");
+    // Common tags to prevent auto-teardown
+    var commonTags = new Dictionary<string, string>
+    {
+        ["Owner"] = "v-adam@pulumi.com",
+        ["Project"] = $"Azure C# Workshop - {Pulumi.Deployment.Instance.StackName}"
+    };
+
+    var rg = new ResourceGroup("dad-joke-rg", new ResourceGroupArgs
+    {
+        Tags = commonTags
+    });
 
     var stg = new StorageAccount("dadjokesa", new StorageAccountArgs
     {
         ResourceGroupName = rg.Name,
         Sku = new Pulumi.AzureNative.Storage.Inputs.SkuArgs { Name = SkuName.Standard_LRS },
         Kind = Kind.StorageV2,
-        AllowBlobPublicAccess = false
+        AllowBlobPublicAccess = false,
+        Tags = commonTags
     });
 
     // Connection string for Functions runtime
@@ -33,16 +44,17 @@ return await Pulumi.Deployment.RunAsync(() =>
         return $"DefaultEndpointsProtocol=https;AccountName={acctName};AccountKey={key};EndpointSuffix=core.windows.net";
     });
 
-    // Azure OpenAI (Cognitive Services)
+    // Azure OpenAI (Cognitive Services) - using East US as GPT-4o-mini not available in Canadian regions
     var openAI = new Account("dad-joke-openai", new AccountArgs
     {
         ResourceGroupName = rg.Name,
-        Location = "eastus",
+        Location = "eastus", // GPT-4o-mini supported region
         Kind = "OpenAI",
         Sku = new Pulumi.AzureNative.CognitiveServices.Inputs.SkuArgs
         {
             Name = "S0"
-        }
+        },
+        Tags = commonTags
     });
 
     // GPT-4o-mini deployment
@@ -74,7 +86,8 @@ return await Pulumi.Deployment.RunAsync(() =>
         ResourceGroupName = rg.Name,
         Kind = "functionapp",
         Reserved = true,                  // IMPORTANT: Linux
-        Sku = new SkuDescriptionArgs { Name = "Y1", Tier = "Dynamic" }
+        Sku = new SkuDescriptionArgs { Name = "Y1", Tier = "Dynamic" },
+        Tags = commonTags
     });
 
     // Blob container to hold packages
@@ -122,6 +135,7 @@ return await Pulumi.Deployment.RunAsync(() =>
         ServerFarmId = plan.Id,
         Kind = "functionapp,linux",
         HttpsOnly = true,
+        Tags = commonTags,
         SiteConfig = new SiteConfigArgs
         {
             LinuxFxVersion = "DOTNET-ISOLATED|8.0",

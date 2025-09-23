@@ -466,3 +466,13 @@ return await Pulumi.Deployment.RunAsync(() =>
     };
 });
 ```
+
+## 💾 Backup Deployment
+
+A backup deployment is available in Canada Central:
+
+**Backup Endpoints:**
+- Function App: `https://dad-joke-functionf68546a3.azurewebsites.net`
+- Joke API: `https://dad-joke-functionf68546a3.azurewebsites.net/api/joke`
+
+**Pulumi Cloud:** https://app.pulumi.com/demo/c3-azure/backup/updates/1
