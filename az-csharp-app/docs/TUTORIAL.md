@@ -26,7 +26,8 @@ function/JokeFunctions.cs
 ## Show Architecture Diagrams and explain
 
 - explain resources we setup
-- exaplain request flow
+- explain request flow
+- show Azure and app services
 
 ## Bicep
 
@@ -41,6 +42,7 @@ mkdir infrastructure
 cd infrastructure
 pulumi new
 ```
+
 - you could use ai
 - but I will use azure-csharp
 - pick `canadacentral` region
@@ -107,7 +109,7 @@ return await Pulumi.Deployment.RunAsync(() =>
 Then copy full code ( below )
 Then pulumi up
 
-Then 
+Then:
 ```
 ## Geting the value
 pulumi stack output functionAppUrl
@@ -118,7 +120,12 @@ curl $(pulumi stack output jokeEndpoint)
 curl "$(pulumi stack output jokeEndpoint)?keywords=failure"
 ```
 
-Full pulumi program:
+Then show in azure.
+
+Then show in pulumi.com
+
+
+## Full pulumi program:
 ```
 using Pulumi;
 using Pulumi.AzureNative.Resources;
