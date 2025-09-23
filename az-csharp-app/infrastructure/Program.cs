@@ -12,14 +12,28 @@ using System;
 
 return await Pulumi.Deployment.RunAsync(() =>
 {
-    var rg = new ResourceGroup("dad-joke-rg");
+    var stackName = Pulumi.Deployment.Instance.StackName;
+    var commonTags = new Dictionary<string, string>
+    {
+        ["Owner"] = "v-adam@pulumi.com",
+        ["Description"] = $"Azure workshop {stackName}",
+        ["Environment"] = stackName,
+        ["Project"] = "AzureCSharpWorkshop"
+    };
+
+    var rg = new ResourceGroup("dad-joke-rg", new ResourceGroupArgs
+    {
+        Location = "eastus",
+        Tags = commonTags
+    });
 
     var stg = new StorageAccount("dadjokesa", new StorageAccountArgs
     {
         ResourceGroupName = rg.Name,
         Sku = new StorageInputs.SkuArgs { Name = SkuName.Standard_LRS },
         Kind = Kind.StorageV2,
-        AllowBlobPublicAccess = false
+        AllowBlobPublicAccess = false,
+        Tags = commonTags
     });
 
      // Connection string for Functions runtime
@@ -44,7 +58,8 @@ return await Pulumi.Deployment.RunAsync(() =>
         Sku = new CognitiveInputs.SkuArgs
         {
             Name = "S0"
-        }
+        },
+        Tags = commonTags
     });
 
     // GPT-4o-mini deployment
@@ -76,7 +91,8 @@ return await Pulumi.Deployment.RunAsync(() =>
         ResourceGroupName = rg.Name,
         Kind = "functionapp",
         Reserved = true,                  // IMPORTANT: Linux
-        Sku = new SkuDescriptionArgs { Name = "Y1", Tier = "Dynamic" }
+        Sku = new SkuDescriptionArgs { Name = "Y1", Tier = "Dynamic" },
+        Tags = commonTags
     });
 
     // Blob container to hold packages
@@ -124,6 +140,7 @@ return await Pulumi.Deployment.RunAsync(() =>
         ServerFarmId = plan.Id,
         Kind = "functionapp,linux",
         HttpsOnly = true,
+        Tags = commonTags,
         SiteConfig = new SiteConfigArgs
         {
             LinuxFxVersion = "DOTNET-ISOLATED|8.0",
