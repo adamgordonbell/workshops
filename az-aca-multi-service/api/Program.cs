@@ -65,7 +65,7 @@ if (failureRate > 0)
             {
                 var log = context.RequestServices.GetRequiredService<ActivityLog>();
                 log.Log(context.Request.Method, context.Request.Path,
-                    "SIMULATED FAILURE (will retry via Dapr)", 500);
+                    "SIMULATED FAILURE (will retry via Azure native)", 500);
 
                 context.Response.StatusCode = 500;
                 await context.Response.WriteAsJsonAsync(new
