@@ -206,6 +206,8 @@ Instead of clicking through the Azure Portal, we'll define our infrastructure in
 
 ## Part 5: Hands-On - Building Infrastructure from Scratch
 
+🟢 **← WE ARE HERE** - Starting infrastructure setup
+
 We'll start by deploying a simple version without a service mesh. This will help us understand **why Dapr is needed** later.
 
 ### Step 1: Create Your Pulumi Project
@@ -371,11 +373,6 @@ pulumi up
 
 Watch as Pulumi creates the storage account! This takes about 30 seconds.
 
-
-```bash
-pulumi stack output
-```
-
 ### Step 7: Add More Resources (Guided Copy/Paste)
 
 Now we'll add the remaining resources incrementally. We'll use the diff view to see what to add next.
@@ -463,7 +460,7 @@ Open it in your browser! You should see your Kanban board running in Azure.
 Get the backend URL:
 
 ```bash
-pulumi stack output backendUrl_out
+pulumi stack output backendUrl
 ```
 
 ### Step 11: The Security Problem
@@ -473,7 +470,7 @@ Now let's demonstrate why we need Dapr. With our current deployment, **both the 
 Try calling the backend's notification endpoint directly:
 
 ```bash
-BACKEND_URL=$(pulumi stack output backendUrl_out)
+BACKEND_URL=$(pulumi stack output backendUrl)
 
 # Call the protected notification endpoint directly (bypassing the BFF)
 curl -X POST "$BACKEND_URL/api/items/item_002/notify-team" \
@@ -564,247 +561,147 @@ This is exactly what Dapr + BFF will protect against.
 
 ---
 
-## Part 6: Securing the Backend with Native Azure Features
+## Part 6: Enter Dapr
 
-We've seen the security problem - anyone can call our backend API directly. Let's fix this using Azure Container Apps' native features.
+### What is Dapr?
 
-### The Solution: Internal Backend + Resiliency Policies
+**Dapr (Distributed Application Runtime)** is a portable, event-driven runtime that makes it easy to build resilient, stateful applications.
 
-Instead of making the backend publicly accessible, we'll:
+Think of it as a **service mesh** that provides:
 
-1. **Make the backend internal-only** - no public endpoint
-2. **Use native service discovery** - frontend calls backend by name
-3. **Add resiliency policies** - automatic retries for transient failures
+- 🔒 **Service-to-service invocation** (with mTLS security)
+- 🔄 **Automatic retries** and circuit breakers
+- 📮 **Pub/sub messaging** (event-driven architecture)
+- 💾 **State management** (abstracting storage)
+- 🔐 **Secrets management** (vault integration)
+- 🎯 **Observability** (tracing, metrics, logs)
 
-This gives us security AND resilience without additional complexity.
+### How Dapr Works
 
-When you set External = false, Azure gives your service an internal-only name. When other services call that name:
-  1. DNS resolves the name to a stable virtual IP (this doesn't change)
-  2. A load balancer at that IP distributes requests across your healthy replicas
-  3. Both are managed automatically - you just call the service by name
+Instead of calling services directly:
 
-### Step 1: Compare with Native Version
+```
+Frontend → Backend
+```
+
+Services talk through Dapr sidecars:
+
+```
+Frontend → Dapr Sidecar → Dapr Sidecar → Backend
+```
+
+Each container gets its own **Dapr sidecar** that handles:
+
+- Authentication (mTLS)
+- Retries and timeouts
+- Load balancing
+- Telemetry
+
+### Dapr in Azure Container Apps
+
+Azure Container Apps has **built-in Dapr support**. You just enable it:
+
+```csharp
+Dapr = new DaprArgs
+{
+    Enabled = true,
+    AppId = "backend-api",
+    AppPort = 5000,
+    AppProtocol = "http"
+}
+```
+
+This automatically:
+
+- ✅ Injects a Dapr sidecar container
+- ✅ Configures service discovery
+- ✅ Sets up mTLS between services
+- ✅ Enables Dapr APIs
+
+### BFF with Dapr
+
+Look at our BFF code (`frontend/bff/server.js`):
+
+```javascript
+// Without Dapr - direct HTTP call
+const BACKEND_URL = 'https://backend.azurecontainerapps.io';
+
+// With Dapr - service invocation
+const BACKEND_URL = 'http://localhost:3500/v1.0/invoke/backend-api/method';
+
+// Adds retry headers
+if (isDaprBackend) {
+  proxyReq.setHeader('dapr-max-retry-count', '3');
+  proxyReq.setHeader('dapr-retry-timeout', '5s');
+}
+```
+
+Now our BFF talks to the **Dapr sidecar on localhost:3500**, which handles all the complexity of calling the backend securely.
+
+---
+
+## Part 7: Hands-On - Deploy with Dapr
+
+### Step 1: Create New Infrastructure
+
+Copy your basic infrastructure to a new `infra` directory:
+
+```bash
+cp -r infra-basic infra
+cd infra
+```
+
+### Step 2: Compare with Dapr Version
 
 Open the diff in VS Code to see what needs to change:
 
 ```bash
 # From inside infra/ directory:
-code --diff Program.cs ../infra-native/Program.cs
+code --diff Program.cs ../infra-dapr/Program.cs
 
 # Or from project root:
-code --diff infra/Program.cs infra-native/Program.cs
+code --diff infra/Program.cs infra-dapr/Program.cs
 ```
 
-You'll see three main changes:
+You'll see five main changes:
 
-1. Backend ingress becomes internal-only (`External = false`)
-3. Resiliency policy added to backend
+1. Backend gets Dapr configuration
+2. Backend becomes internal-only (`External = false`)
+3. Backend gets FailureRate env var
+4. Frontend gets Dapr configuration
+5. Frontend BACKEND_URL changes to Dapr service invocation URL
 
-### Step 2: Make Backend Internal-Only
+### Step 3: Add Dapr to Backend
 
-Change the backend ingress from `External = true` to `External = false`:
+Find the backend's `Configuration` section and add Dapr before `Ingress`:
 
 ```csharp
-Ingress = new Pulumi.AzureNative.App.Inputs.IngressArgs
+Configuration = new Pulumi.AzureNative.App.Inputs.ConfigurationArgs
 {
-    External = false,  // Changed from true - backend is now internal!
-    TargetPort = 8080,
-    Transport = IngressTransportMethod.Auto,
-    AllowInsecure = false
-},
-```
-
-**What this does:**
-- Backend no longer has a public URL
-- Only accessible from within the Container Apps Environment
-- Attackers can't reach it directly
-
-
-#### Compare Infrastructure Changes
-
-The `infra-dapr/` folder shows what would change. Let's compare:
-
-```bash
-# Compare native vs. Dapr infrastructure
-code --diff Program.cs ../infra-native/Program.cs
-```
-
-### Step 4: Add Resiliency Policy
-
-Add a resiliency policy to automatically retry failed requests to the backend:
-
-```csharp
-var backendResiliencyPolicy = new ConnectedEnvironmentDaprComponentResiliencyPolicy("backendResiliency", new()
-{
-    Name = "backend-resiliency",
-    ResourceGroupName = resourceGroup.Name,
-    ConnectedEnvironmentName = containerAppEnv.Name,
-    TargetContainerAppName = backendApp.Name,
-
-    InboundPolicy = new DaprComponentResiliencyPolicyConfigurationArgs
+    Dapr = new Pulumi.AzureNative.App.Inputs.DaprArgs
     {
-        HttpRetryPolicy = new DaprComponentResiliencyPolicyHttpRetryPolicyConfigurationArgs
-        {
-            MaxRetries = 3,
-            RetryBackOff = new DaprComponentResiliencyPolicyHttpRetryBackOffConfigurationArgs
-            {
-                InitialDelayInMilliseconds = 500,
-                MaxIntervalInMilliseconds = 5000
-            }
-        },
-        TimeoutPolicy = new DaprComponentResiliencyPolicyTimeoutPolicyConfigurationArgs
-        {
-            ResponseTimeoutInSeconds = 30
-        }
-    }
-});
+        Enabled = true,
+        AppId = "backend",
+        AppPort = 8080,
+        AppProtocol = "http"
+    },
+    Ingress = new Pulumi.AzureNative.App.Inputs.IngressArgs
+    {
+        // ... existing ingress config
 ```
 
-**What this provides:**
-- Automatic retries (up to 3 times)
-- Exponential backoff between retries
-- Timeout protection
-- Happens at the platform level - transparent to your code
+**What's happening:**
+- `AppId = "backend"` - This is how other services will find this app via Dapr
+- `AppPort = 8080` - Tells Dapr which port your app listens on
+- Dapr sidecar will be automatically injected
 
-### Step 5: Preview Changes
 
-See what Pulumi will change:
+## Backend Code
 
-```bash
-pulumi preview
-```
-
-You should see:
-- Backend ContainerApp (ingress changed to internal)
-- Frontend ContainerApp (BACKEND_URL changed)
-- New resiliency policy resource
-
-### Step 6: Deploy
-
-Deploy the secured infrastructure:
-
-```bash
-pulumi up
-```
-
-This takes about 2-3 minutes.
-
-### Step 7: Test Backend Protection
-
-Get your frontend URL:
-
-```bash
-FRONTEND_URL=$(pulumi stack output frontendUrl)
-```
-
-Try to get the backend URL (should be empty or internal-only):
-
-```bash
-pulumi stack output backendUrl_out
-```
-
-**Result:** Backend has no public endpoint!
-
-### Step 8: Test Resiliency
-
-The backend is configured with a 30% failure rate to demonstrate automatic retries. Make multiple requests:
-
-```bash
-# Call the frontend 10 times
-for i in {1..10}; do
-  curl -s $FRONTEND_URL/api/board | jq -r '.columns[0].title // .error'
-done
-```
-
-**Expected result:** You should see "Inbox" 10 times (no errors!)
-
-Even though the backend fails 30% of the time, the resiliency policy automatically retries failed requests. The frontend never sees these failures.
-
-### Step 9: Verify Security
-
-Try to spam the notification endpoint:
-
-```bash
-# This should NOT work anymore
-curl -X POST "$FRONTEND_URL/api/items/item_002/notify-team" \
-  -H "Content-Type: application/json" \
-  -d '{"message":"SPAM"}'
-```
-
-**Result:** The BFF blocks this (rate limiting and validation), and even if it got through, there's no way to bypass the BFF since the backend has no public endpoint.
-
-### What We Accomplished
-
-✅ **Security:** Backend is not publicly accessible (internal-only ingress)
-✅ **Resilience:** Automatic retries for transient failures (actually works!)
-✅ **Simplicity:** Native Azure features, no additional sidecars or complexity
-✅ **Service Discovery:** Services find each other by name within the environment
-✅ **Protection:** BFF enforces rate limiting and business logic
-
----
-
-## Part 7: When to Use Dapr
-
-We've secured our backend using Azure Container Apps' native features. But you might have heard about **Dapr** (Distributed Application Runtime). When should you use it?
-
-### What is Dapr?
-
-**Dapr** is a CNCF project that provides portable building blocks for distributed applications:
-
-- 📮 **Pub/sub messaging** - abstract message brokers (Service Bus, Kafka, RabbitMQ)
-- 💾 **State management** - abstract state stores (Cosmos DB, Redis, PostgreSQL)
-- 🔌 **Bindings** - connect to external systems (Twilio, SendGrid, S3)
-- 🔐 **Secrets management** - abstract secret stores (Key Vault, AWS Secrets Manager)
-- 🎯 **Observability** - distributed tracing and metrics
-
-### Dapr vs. Native Azure Features
-
-**Native Azure Container Apps features are better for:**
-- Simple service-to-service HTTP calls
-- Staying within Azure
-- Automatic retries and resilience
-- Simpler architecture
-
-**Dapr is better for:**
-- Multi-cloud portability (run same code on AWS, Azure, K8s)
-- Abstracting infrastructure (swap Service Bus for Kafka without code changes)
-- Pub/sub messaging patterns
-- State management abstraction
-- Complex distributed systems
-
-### Example: Webhook Events with Dapr Pub/Sub
-
-Remember our vision - aggregating todos from GitHub, Slack, Monday.com, and email. With our current architecture, the backend is private. **How do we receive webhook events?**
-
-This is where Dapr's pub/sub pattern shines:
-
-```
-External Webhooks → Azure Service Bus → Dapr Pub/Sub → Backend
-```
-
-#### Compare Infrastructure Changes
-
-The `infra-dapr/` folder shows what would change. Let's compare:
-
-```bash
-# Compare native vs. Dapr infrastructure
-code --diff infra-native/Program.cs infra-dapr/Program.cs
-```
-
-**Key differences you'll see:**
-
-1. **Service Bus added** - Namespace and topic for webhook events
-2. **Dapr component added** - Connects Service Bus to backend via pub/sub
-3. **Backend keeps Dapr** - Enabled for pub/sub subscriptions
-4. **Frontend stays simple** - No Dapr, just native HTTP calls
-5. **No resiliency policy** - Different use case (event processing, not retries)
-
-This shows Dapr is **only enabled where needed** (backend for pub/sub), not everywhere.
-
-#### Backend Code with Dapr Pub/Sub
+Backend would need these endpoints (not included in current backend):
 
 ```csharp
-// Backend subscribes to webhook events
+// Subscribe to Dapr pub/sub
 app.MapGet("/dapr/subscribe", () => new[]
 {
     new {
@@ -814,7 +711,7 @@ app.MapGet("/dapr/subscribe", () => new[]
     }
 });
 
-// Receive events from any source (GitHub, Slack, Monday)
+// Receive webhook events
 app.MapPost("/events/tasks", async (TaskEvent evt, BoardService board) =>
 {
     var item = new Item(
@@ -837,84 +734,11 @@ public record TaskEvent(
 );
 ```
 
-#### Infrastructure with Dapr Component
+**What's happening:**
+- `localhost:3500` - Dapr sidecar running alongside the BFF
+- `/v1.0/invoke/backend/method` - Dapr service invocation API
+- Calls to this URL will be routed through Dapr to the backend
 
-```csharp
-// Azure Service Bus for webhook events
-var serviceBusNamespace = new ServiceBusNamespace("todo-webhooks", new()
-{
-    ResourceGroupName = resourceGroup.Name,
-    Sku = new ServiceBusNamespaceSku { Name = "Standard" }
-});
-
-var topic = new Topic("external-tasks", new()
-{
-    NamespaceName = serviceBusNamespace.Name,
-    ResourceGroupName = resourceGroup.Name
-});
-
-// Dapr pub/sub component
-var daprPubSubComponent = new DaprComponent("pubsub", new()
-{
-    ComponentName = "pubsub",
-    EnvironmentName = containerAppEnv.Name,
-    ResourceGroupName = resourceGroup.Name,
-    ComponentType = "pubsub.azure.servicebus",
-    Metadata = new[]
-    {
-        new DaprMetadataArgs
-        {
-            Name = "connectionString",
-            SecretRef = "servicebus-connection-string"
-        }
-    }
-});
-
-// Backend with Dapr enabled (for pub/sub only)
-var backendApp = new ContainerApp("backendApp", new()
-{
-    Configuration = new ConfigurationArgs
-    {
-        Dapr = new DaprArgs
-        {
-            Enabled = true,
-            AppId = "backend",
-            AppPort = 8080,
-            AppProtocol = "http"
-        },
-        Ingress = new IngressArgs
-        {
-            External = false,  // Still internal!
-            TargetPort = 8080
-        }
-    }
-});
-```
-
-#### Benefits of This Approach
-
-✅ **Backend stays private** - webhooks go to Service Bus, not your API
-✅ **Buffering** - events are queued if backend is down
-✅ **Decoupling** - add new sources without changing backend
-✅ **Portability** - swap Service Bus for Kafka or RabbitMQ with just config changes
-✅ **Reliability** - dead letter queue for failed events
-
-### The Dapr Decision
-
-**Use native Azure features when:**
-- Simple service-to-service calls
-- Azure-only deployment
-- Want simplicity and fewer moving parts
-
-**Use Dapr when:**
-- Need pub/sub messaging abstraction
-- Want multi-cloud portability
-- Building complex distributed systems
-- Need state management or bindings
-
-For this workshop, we've used native features because they're simpler and solve the immediate problem. The `infra-dapr/` folder shows what Dapr deployment would look like if you need pub/sub later.
-
----
 
 ## Part 8: Configuration with Pulumi ESC
 
@@ -1295,205 +1119,6 @@ Open an issue at: [github.com/your-repo/todo-demo](https://github.com/your-repo/
 - [.NET 8](https://dotnet.microsoft.com/) - Backend API
 - [React 18](https://react.dev/) - Frontend SPA
 - [TypeScript](https://www.typescriptlang.org/) - Type-safe development
-
----
-
-## Application Architecture - Local
-
-```mermaid
-graph LR
-    User[User Browser]
-
-    subgraph "Todo Demo Application"
-        Frontend[Frontend<br/>React + BFF<br/>:5174]
-        Backend[Backend API<br/>.NET 8<br/>:5001]
-        Storage[File System<br/>board.json]
-    end
-
-    User -->|HTTP| Frontend
-    Frontend -->|HTTP| Backend
-    Backend -->|Read/Write| Storage
-
-    style Frontend fill:#61dafb,stroke:#333,stroke-width:2px
-    style Backend fill:#512bd4,stroke:#333,stroke-width:2px
-    style Storage fill:#90EE90,stroke:#333,stroke-width:2px
-```
-
-## Application Architecture - Azure Container Apps
-
-```mermaid
-graph LR
-    User[User Browser]
-
-    subgraph "Azure Container Apps"
-        Frontend[Frontend<br/>React + BFF]
-        Backend[Backend API<br/>.NET 8]
-    end
-
-    Storage[Azure Blob Storage<br/>board.json]
-
-    User -->|HTTPS| Frontend
-    Frontend -->|HTTP| Backend
-    Backend -->|Read/Write| Storage
-
-    style Frontend fill:#61dafb,stroke:#333,stroke-width:2px
-    style Backend fill:#512bd4,stroke:#333,stroke-width:2px
-    style Storage fill:#0078d4,stroke:#333,stroke-width:2px
-```
-
-## Application Architecture - Private Backend with Native Resiliency
-
-```mermaid
-graph LR
-    User[User Browser]
-    Attacker[Attacker]
-
-    subgraph "Azure Container Apps"
-        Frontend[Frontend<br/>React + BFF<br/>External]
-        Backend[Backend API<br/>.NET 8<br/>⚠️ Internal Only]
-    end
-
-    Storage[Azure Blob Storage<br/>board.json]
-
-    User -->|HTTPS ✅| Frontend
-    Frontend -->|Native Service Discovery ✅<br/>with Resiliency Policy| Backend
-    Attacker -.->|HTTPS ❌<br/>Blocked| Backend
-    Backend -->|Read/Write| Storage
-
-    style Frontend fill:#61dafb,stroke:#333,stroke-width:2px
-    style Backend fill:#512bd4,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
-    style Storage fill:#0078d4,stroke:#333,stroke-width:2px
-    style Attacker fill:#ff6b6b,stroke:#333,stroke-width:2px
-```
-
-## Native Resiliency Flow with Automatic Retries
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant BFF as Frontend BFF
-    participant ACA as Azure Container Apps<br/>Resiliency Policy
-    participant Backend as Backend API
-    participant Attacker
-
-    Note over User,Backend: Valid Request Flow with Transparent Retries
-    User->>BFF: GET /api/board
-    BFF->>BFF: ✅ Rate limit check
-    BFF->>BFF: ✅ Validate request
-    BFF->>ACA: GET https://backend.internal/api/board
-    ACA->>Backend: Request 1
-    Backend-->>ACA: ❌ 500 Simulated Failure
-    Note over ACA: Resiliency policy triggers retry<br/>(exponential backoff)
-    ACA->>Backend: Request 2 (retry after 500ms)
-    Backend-->>ACA: ✅ 200 OK + board data
-    ACA-->>BFF: 200 OK + board data
-    BFF-->>User: Success (never saw failure!)
-
-    Note over Attacker,Backend: Blocked Request (Backend is Internal)
-    Attacker->>Backend: ❌ POST /api/items/123/notify-team
-    Note over Attacker,Backend: Connection refused - no public endpoint
-
-    Note over User,Backend: Protection at Multiple Levels
-    User->>BFF: POST /api/items/item_002/notify-team
-    BFF->>BFF: ❌ Rate limit exceeded
-    BFF-->>User: 429 Too Many Requests
-    Note over BFF,Backend: Backend never called - BFF blocks invalid requests
-```
-
-## Application Architecture - Dapr Pub/Sub for Webhook Events
-
-```mermaid
-graph TB
-    GitHub[GitHub Webhook<br/>PR opened]
-    Slack[Slack Webhook<br/>Message posted]
-    External[External Systems<br/>Webhooks]
-
-    subgraph "Azure"
-        ServiceBus[Azure Service Bus<br/>Topic: external-tasks<br/>🔄 Buffering & Retry]
-
-        subgraph "Container Apps Environment"
-            DaprComponent[Dapr Component<br/>pubsub<br/>Type: azure.servicebus.topics]
-
-            subgraph "Backend Pod"
-                Backend[Backend API<br/>.NET 8<br/>⚠️ Internal Only]
-                DaprSidecar[Dapr Sidecar<br/>Polls Service Bus<br/>Posts to /events/tasks]
-            end
-
-            Frontend[Frontend<br/>React + BFF<br/>External]
-        end
-
-        Storage[Azure Blob Storage<br/>board.json]
-    end
-
-    GitHub -->|POST event| ServiceBus
-    Slack -->|POST event| ServiceBus
-    External -->|POST event| ServiceBus
-    ServiceBus -.->|Configured via| DaprComponent
-    DaprComponent -.->|Scoped to| Backend
-    DaprSidecar -->|Subscribes| ServiceBus
-    DaprSidecar -->|POST localhost:8080/events/tasks| Backend
-    Frontend -->|Native HTTP| Backend
-    Backend -->|Read/Write| Storage
-
-    style Frontend fill:#61dafb,stroke:#333,stroke-width:2px
-    style Backend fill:#512bd4,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
-    style DaprSidecar fill:#6a8fd9,stroke:#333,stroke-width:2px
-    style DaprComponent fill:#6a8fd9,stroke:#333,stroke-width:2px,stroke-dasharray: 3 3
-    style ServiceBus fill:#0078d4,stroke:#333,stroke-width:2px
-    style Storage fill:#0078d4,stroke:#333,stroke-width:2px
-    style GitHub fill:#90EE90,stroke:#333,stroke-width:2px
-    style Slack fill:#90EE90,stroke:#333,stroke-width:2px
-    style External fill:#90EE90,stroke:#333,stroke-width:2px
-```
-
-## Dapr Pub/Sub Event Flow - Webhook Processing
-
-```mermaid
-sequenceDiagram
-    participant GH as GitHub
-    participant SB as Azure Service Bus<br/>Topic: external-tasks
-    participant Dapr as Dapr Sidecar
-    participant Backend as Backend API
-    participant Board as Board Service
-
-    Note over Dapr,Backend: Startup: Backend registers subscriptions
-    Dapr->>Backend: GET /dapr/subscribe
-    Backend-->>Dapr: [{pubsubname: "pubsub",<br/>topic: "external-tasks",<br/>route: "/events/tasks"}]
-    Note over Dapr: Subscribe to Service Bus topic
-    Dapr->>SB: Subscribe to "external-tasks"
-
-    Note over GH,Board: Webhook Event Arrives
-    GH->>SB: POST webhook event<br/>{title: "PR opened",<br/>sourceType: "github",<br/>externalId: "PR-123"}
-    Note over SB: Event buffered in queue<br/>(survives backend restarts)
-
-    Note over Dapr,SB: Dapr polls for messages
-    Dapr->>SB: Poll for new messages
-    SB-->>Dapr: Message: {TaskEvent}
-
-    Note over Dapr,Backend: Dapr invokes your endpoint
-    Dapr->>Backend: POST http://localhost:8080/events/tasks<br/>Body: {TaskEvent}
-    Backend->>Board: CreateItemAsync(TaskEvent)
-    Board-->>Backend: Item created
-    Backend-->>Dapr: 200 OK
-
-    Note over Dapr,SB: Success - remove from queue
-    Dapr->>SB: Acknowledge & delete message
-
-    Note over GH,Board: Failure Scenario with Retry
-    GH->>SB: POST another event
-    Dapr->>SB: Poll for messages
-    SB-->>Dapr: Message: {TaskEvent}
-    Dapr->>Backend: POST /events/tasks
-    Backend-->>Dapr: ❌ 500 Internal Error
-    Note over Dapr: Retry with backoff
-    Dapr->>Backend: POST /events/tasks (retry)
-    Backend->>Board: CreateItemAsync(TaskEvent)
-    Backend-->>Dapr: ✅ 200 OK
-    Dapr->>SB: Acknowledge & delete message
-
-    Note over GH,Board: Key Benefits
-    Note over SB: 1. Backend can be private<br/>2. Events buffered if backend down<br/>3. Automatic retries<br/>4. Portable (swap Kafka/RabbitMQ)
-```
 
 ---
 
