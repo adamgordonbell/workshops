@@ -19,7 +19,3 @@ infra/
 # Keep board.json as working state (not committed)
 api/Data/board.json
 todo-demo.sln
-
-# Workshop materials (keep locally only)
-WORKSHOP.md
-workshop-infra.md
