@@ -1,0 +1,3 @@
+name: az-getting-started-aks-csharp
+runtime: dotnet
+description: Getting started with Kubernetes on AKS with Pulumi - C# edition

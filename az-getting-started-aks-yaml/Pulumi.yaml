@@ -18,7 +18,7 @@ resources:
   myAKSCluster:
     type: azure-native:containerservice/v20240102preview:ManagedCluster
     properties:
-      kubernetesVersion: 1.29.0
+      kubernetesVersion: "1.33"
       resourceGroupName: ${myAKSClusterResourceGroup.name}
       resourceName: my-aks-cluster
       nodeResourceGroup: ${myAKSClusterResourceGroup.name}-nodes
